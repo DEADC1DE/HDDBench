@@ -28,15 +28,19 @@ def parse_size(size_str):
     units = {'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
     return int(num * units.get(unit, 1))
 
-def test_file(file_index, run_dir, size_str, syncmode, debug):
+def test_file(file_index, run_dir, size_str, syncmode=None, debug=False):
     file_path = os.path.join(run_dir, f"testfile_{file_index}.dat")
     result = {"index": file_index, "write_time": None, "read_time": None, "error": None}
     write_cmd = ['dd', 'if=/dev/zero', f'of={file_path}', f'bs={size_str}', 'count=1']
-    if syncmode:
-        write_cmd.append('oflag=sync')
     
-    start = time.monotonic()
+    if syncmode == 'sync':
+        write_cmd.append('oflag=sync')
+    elif syncmode == 'dsync':
+        write_cmd.append('oflag=dsync')
+    elif syncmode == 'direct':
+        write_cmd.append('oflag=direct')
 
+    start = time.monotonic()
     try:
         if debug:
             subprocess.run(write_cmd, check=True)
@@ -45,11 +49,10 @@ def test_file(file_index, run_dir, size_str, syncmode, debug):
     except subprocess.CalledProcessError as e:
         result["error"] = f"Error writing {file_path}: {e}"
         return result
-
     end = time.monotonic()
     result["write_time"] = end - start
 
-    if syncmode:
+    if syncmode in ['sync', 'dsync']:
         read_cmd = ['dd', f'if={file_path}', 'of=/dev/null', f'bs={size_str}', 'count=1']
         start = time.monotonic()
         try:
@@ -62,6 +65,7 @@ def test_file(file_index, run_dir, size_str, syncmode, debug):
             return result
         end = time.monotonic()
         result["read_time"] = end - start
+
     return result
 
 def run_test_run(run_number, files, size_str, run_dir, syncmode, bytes_per_file, debug):
@@ -69,8 +73,7 @@ def run_test_run(run_number, files, size_str, run_dir, syncmode, bytes_per_file,
     os.makedirs(run_dir, exist_ok=True)
     start_run = time.monotonic()
     results = []
-    total_written_time = 0
-    total_written_speed = 0
+    total_written_speeds = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=files) as executor:
         futures = [executor.submit(test_file, i, run_dir, size_str, syncmode, debug) for i in range(1, files + 1)]
@@ -80,15 +83,13 @@ def run_test_run(run_number, files, size_str, run_dir, syncmode, bytes_per_file,
             if result["write_time"] is not None:
                 written_bytes = bytes_per_file
                 write_speed = written_bytes / result["write_time"] / (1024**2)
-                total_written_time += result["write_time"]
-                total_written_speed += write_speed
-
+                total_written_speeds.append(write_speed)
+    
     end_run = time.monotonic()
     run_duration = end_run - start_run
     total_bytes = files * bytes_per_file
     overall_write_speed = total_bytes / run_duration / (1024**2)
-
-    average_written_speed = total_written_speed / files if files > 0 else 0
+    average_written_speed = sum(total_written_speeds) / len(total_written_speeds) if total_written_speeds else 0
 
     print(f"{Colors.OKGREEN}Test run {run_number} completed in {run_duration:.2f} s{Colors.ENDC}")
     print(f"{Colors.OKGREEN}Overall write speed: {overall_write_speed:.2f} MB/s{Colors.ENDC}")
@@ -100,6 +101,7 @@ def run_test_run(run_number, files, size_str, run_dir, syncmode, bytes_per_file,
         for err in errors:
             print(f"  - {Colors.WARNING}{err}{Colors.ENDC}")
     print()
+    
     return run_duration, overall_write_speed, average_written_speed, errors
 
 def main():
@@ -120,12 +122,17 @@ def main():
         size_str = str(hdd_config['size'])
         runs = int(hdd_config['runs'])
         keep = bool(hdd_config['keep'])
-        syncmode = bool(hdd_config.get('syncmode', False))
+        syncmode = str(hdd_config.get('syncmode', 'none')).lower()
         test_path = hdd_config['test_path']
         debug = bool(hdd_config.get('debug', False))
     except Exception as e:
         print(f"{Colors.FAIL}Error reading configuration: {e}{Colors.ENDC}")
         return
+
+    valid_syncmodes = ['none', 'direct', 'dsync', 'sync']
+    if syncmode not in valid_syncmodes:
+        print(f"{Colors.FAIL}Invalid syncmode specified: {syncmode}. Defaulting to 'none'.{Colors.ENDC}")
+        syncmode = 'none'
 
     try:
         bytes_per_file = parse_size(size_str)
@@ -160,19 +167,11 @@ def main():
     avg_duration = sum(all_run_durations) / len(all_run_durations) if all_run_durations else 0
     avg_write_speed = sum(all_write_speeds) / len(all_write_speeds) if all_write_speeds else 0
     avg_written_speed = sum(all_avg_written_speeds) / len(all_avg_written_speeds) if all_avg_written_speeds else 0
-
+    
     print(f"{Colors.OKCYAN}HDDBench test completed.{Colors.ENDC}")
     print(f"{Colors.OKCYAN}Average duration per test run: {avg_duration:.2f} s{Colors.ENDC}")
     print(f"{Colors.OKCYAN}Average write speed: {avg_write_speed:.2f} MB/s{Colors.ENDC}")
     print(f"{Colors.OKCYAN}Average written speed per file across runs: {avg_written_speed:.2f} MB/s{Colors.ENDC}")
-
-    if syncmode:
-        print(f"{Colors.WARNING}Sync mode was enabled.{Colors.ENDC}")
-    if not keep:
-        try:
-            os.rmdir(base_test_dir)
-        except OSError:
-            pass
 
 if __name__ == '__main__':
     main()
