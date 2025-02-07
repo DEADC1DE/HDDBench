@@ -1,0 +1,8 @@
+HDDTest:
+  files: 5                      # Number of files to test concurrently
+  size: "500M"                  # Size of each file (e.g., "500M" for 500 Megabytes)
+  runs: 1                       # Number of test runs to execute
+  keep: false                   # Set to true to keep the test files after the runs
+  syncmode: false               # Set to true to enable synchronous writing
+  test_path: /mnt/              # Path where test files will be created
+  debug: true                   # Set to true to enable debug output during tests
