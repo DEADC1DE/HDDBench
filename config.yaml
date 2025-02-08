@@ -1,5 +1,5 @@
 HDDTest:
-  files: 5                      # Number of files to test concurrently
+  files: 20                      # Number of files to test concurrently
   size: "500M"                  # Size of each file (e.g., "500M" for 500 Megabytes)
   runs: 1                       # Number of test runs to execute
   keep: false                   # Set to true to keep the test files after the runs
