@@ -4,6 +4,6 @@ HDDTest:
   runs: 1                       # Number of test runs to execute
   keep: false                   # Set to true to keep the test files after the runs
   syncmode: none                # Option can be none (default), direct, dsync, sync
-  test_path: /mnt/              # Path where test files will be created
+  test_path: /mnt
   fio_test: true                # Enable additional FIO test
   debug: true                   # Set to true to enable debug output during tests
